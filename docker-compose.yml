@@ -1,0 +1,8 @@
+services:
+  backup:
+    build: .
+    command: python app.py
+    volumes:
+      - ./config.cfg:/app/config.cfg:ro
+      - ./backup:/app/backup
+
