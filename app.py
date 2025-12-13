@@ -1,6 +1,7 @@
 import json
 import os
 import re
+import shutil
 import subprocess
 import time
 import zipfile
@@ -13,6 +14,7 @@ from botocore.client import Config as BotoConfig
 
 BASE_DIR = Path(__file__).resolve().parent
 CONFIG_PATH = BASE_DIR / "config.cfg"
+TEMP_DIR = BASE_DIR / ".backup_temp"
 
 
 def _to_namespace(value):
@@ -39,9 +41,17 @@ filestamp = time.strftime("%Y-%m-%d-%H.%M")
 backup_dir = BASE_DIR / "backup"
 backup_dir.mkdir(exist_ok=True)
 
+# Create temp directory for intermediate zips
+TEMP_DIR.mkdir(exist_ok=True)
+
 for existing_file in backup_dir.iterdir():
     if existing_file.is_file():
         existing_file.unlink()
+
+# Clean temp directory
+if TEMP_DIR.exists():
+    shutil.rmtree(TEMP_DIR)
+    TEMP_DIR.mkdir()
 
 
 def run_mysqldump(database, destination: Path):
@@ -84,7 +94,8 @@ def zipfolder(zip_path, target_dir):
 for directory_object in config.extra_directories:
     target_path = Path(directory_object.path)
     if target_path.exists():
-        zip_path = backup_dir / directory_object.name
+        # Store extra directory zips in temp folder, not in backup/
+        zip_path = TEMP_DIR / directory_object.name
         zipfolder(zip_path, target_path)
     else:
         print("Directory %s does not exist" % directory_object.path)
@@ -93,7 +104,15 @@ for directory_object in config.extra_directories:
 archive_name = f"backup_{filestamp}.zip"
 archive_path = BASE_DIR / archive_name
 
-zipfolder(archive_path, backup_dir)
+# Create final archive with both SQL dumps and extra directory zips
+with zipfile.ZipFile(archive_path, "w", zipfile.ZIP_DEFLATED, allowZip64=True) as final_zip:
+    # Add all SQL dumps from backup/
+    for sql_file in backup_dir.glob("*.sql"):
+        final_zip.write(sql_file, sql_file.name)
+    
+    # Add all extra directory zips from temp/
+    for extra_zip in TEMP_DIR.glob("*.zip"):
+        final_zip.write(extra_zip, extra_zip.name)
 
 aws_region = os.environ.get("AWS_DEFAULT_REGION", "us-east-1")
 s3 = boto3.client(
@@ -111,3 +130,14 @@ try:
     archive_path.unlink()
 except OSError:
     pass
+
+# Clean up backup/ and temp directories
+for leftover_file in backup_dir.iterdir():
+    if leftover_file.is_file():
+        try:
+            leftover_file.unlink()
+        except OSError:
+            pass
+
+if TEMP_DIR.exists():
+    shutil.rmtree(TEMP_DIR)
