@@ -1,0 +1,7 @@
+services:
+  backup:
+    networks:
+      - shared
+networks:
+  shared:
+    external: true

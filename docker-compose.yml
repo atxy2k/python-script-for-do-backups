@@ -4,5 +4,7 @@ services:
     command: python app.py
     volumes:
       - ./config.cfg:/app/config.cfg:ro
-      - /Users/atxy2k/Downloads/respaldar:/app/respaldar
+      - /opt/storage:/app/backups/storage
+      - /opt/npm:/app/backups/npm
+      - /home/atxy2k/echecopar_sitemaps:/app/backups/sitemaps  
 

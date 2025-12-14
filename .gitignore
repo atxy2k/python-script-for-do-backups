@@ -6,3 +6,4 @@ logs/
 *.log
 __pycache__/
 *.pyc
+docker-compose.override.yml
