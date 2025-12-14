@@ -142,7 +142,12 @@ with zipfile.ZipFile(archive_path, "w", zipfile.ZIP_DEFLATED, allowZip64=True) a
     for extra_zip in TEMP_DIR.glob("*.zip"):
         final_zip.write(extra_zip, extra_zip.name)
 
-aws_region = os.environ.get("AWS_DEFAULT_REGION", "us-east-1")
+aws_region = getattr(
+    config.amazon,
+    "region",
+    os.environ.get("AWS_DEFAULT_REGION", "us-east-1"),
+)
+os.environ["AWS_DEFAULT_REGION"] = aws_region
 s3 = boto3.client(
     "s3",
     aws_access_key_id=config.amazon.access_key,
@@ -153,6 +158,11 @@ s3 = boto3.client(
 
 s3_current_bucket = config.amazon.bucket
 s3.upload_file(str(archive_path), s3_current_bucket, archive_path.name)
+download_url = s3.generate_presigned_url(
+    "get_object",
+    Params={"Bucket": s3_current_bucket, "Key": archive_path.name},
+    ExpiresIn=3600,
+)
 
 # Enviar notificación a Telegram si está configurado
 if hasattr(config, 'telegram') and hasattr(config.telegram, 'bot_token') and hasattr(config.telegram, 'chat_id'):
@@ -162,18 +172,27 @@ if hasattr(config, 'telegram') and hasattr(config.telegram, 'bot_token') and has
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         
         # Obtener plantilla del mensaje o usar una por defecto
-        message_template = getattr(config.telegram, 'message', 
+        message_template = getattr(
+            config.telegram,
+            'message',
             '✅ Backup completado exitosamente\n'
             '📅 Fecha: {timestamp}\n'
-            '📦 Archivo: {filename}\n'
-            '💾 Bases de datos: {databases}')
+            '📦 Archivo: <a href="{download_url}">{filename}</a>\n'
+            '💾 Bases de datos: {databases}'
+        )
         
         # Reemplazar variables en el mensaje
         message = message_template.format(
             timestamp=timestamp,
             filename=archive_path.name,
-            databases=database_names
+            databases=database_names,
+            download_url=download_url
         )
+        if '{download_url}' not in message_template:
+            message += (
+                '\n🔗 Descargar: '
+                f'<a href="{download_url}">{archive_path.name}</a>'
+            )
         
         # Enviar notificación
         send_telegram_notification(
