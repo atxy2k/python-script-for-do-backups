@@ -4,4 +4,5 @@ services:
     command: python app.py
     volumes:
       - ./config.cfg:/app/config.cfg:ro
+      - /Users/atxy2k/Downloads/respaldar:/app/respaldar
 

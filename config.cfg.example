@@ -13,6 +13,11 @@ amazon : {
     access_key : '...',
     secret_access : '....'
 },
+telegram : {
+    bot_token : 'your-bot-token-here',
+    chat_id   : 'your-chat-id-here',
+    message   : '✅ Backup completado exitosamente\n📅 Fecha: {timestamp}\n📦 Archivo: {filename}\n💾 Bases de datos respaldadas: {databases}'
+},
 extra_directories :
 [
     {

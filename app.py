@@ -7,6 +7,9 @@ import time
 import zipfile
 from pathlib import Path
 from types import SimpleNamespace
+from datetime import datetime
+import urllib.request
+import urllib.parse
 
 import boto3
 from botocore.client import Config as BotoConfig
@@ -28,12 +31,37 @@ def _to_namespace(value):
 def load_config(path: Path):
     raw_text = path.read_text()
     raw_text = raw_text.strip()
-    normalized = re.sub(r"([A-Za-z_][A-Za-z0-9_]*)\s*:", r'"\1":', raw_text)
+    normalized = re.sub(
+        r"(?m)^(\s*)([A-Za-z_][A-Za-z0-9_]*)\s*:",
+        lambda match: f'{match.group(1)}"{match.group(2)}":',
+        raw_text,
+    )
     normalized = normalized.replace("'", '"')
     normalized = re.sub(r",(\s*[}\]])", r"\1", normalized)
     normalized = f"{{{normalized}}}"
     data = json.loads(normalized)
     return _to_namespace(data)
+
+
+def send_telegram_notification(bot_token, chat_id, message):
+    """Envía una notificación a Telegram"""
+    try:
+        url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
+        data = urllib.parse.urlencode({
+            'chat_id': chat_id,
+            'text': message,
+            'parse_mode': 'HTML'
+        }).encode('utf-8')
+        
+        req = urllib.request.Request(url, data=data)
+        with urllib.request.urlopen(req, timeout=10) as response:
+            result = json.loads(response.read().decode('utf-8'))
+            if result.get('ok'):
+                print("✓ Notificación enviada a Telegram")
+            else:
+                print(f"✗ Error al enviar notificación: {result}")
+    except Exception as e:
+        print(f"✗ Error al enviar notificación a Telegram: {e}")
 
 
 config = load_config(CONFIG_PATH)
@@ -125,6 +153,36 @@ s3 = boto3.client(
 
 s3_current_bucket = config.amazon.bucket
 s3.upload_file(str(archive_path), s3_current_bucket, archive_path.name)
+
+# Enviar notificación a Telegram si está configurado
+if hasattr(config, 'telegram') and hasattr(config.telegram, 'bot_token') and hasattr(config.telegram, 'chat_id'):
+    try:
+        # Preparar información para el mensaje
+        database_names = ', '.join([db.database for db in config.databases])
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        
+        # Obtener plantilla del mensaje o usar una por defecto
+        message_template = getattr(config.telegram, 'message', 
+            '✅ Backup completado exitosamente\n'
+            '📅 Fecha: {timestamp}\n'
+            '📦 Archivo: {filename}\n'
+            '💾 Bases de datos: {databases}')
+        
+        # Reemplazar variables en el mensaje
+        message = message_template.format(
+            timestamp=timestamp,
+            filename=archive_path.name,
+            databases=database_names
+        )
+        
+        # Enviar notificación
+        send_telegram_notification(
+            config.telegram.bot_token,
+            config.telegram.chat_id,
+            message
+        )
+    except Exception as e:
+        print(f"Warning: No se pudo enviar notificación a Telegram: {e}")
 
 try:
     archive_path.unlink()
